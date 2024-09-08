@@ -1,92 +1,75 @@
 package main
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
+	"strings"
 
-	_ "modernc.org/sqlite"
+	"github.com/tmc/langchaingo/schema"
+	"github.com/tmc/langchaingo/vectorstores"
 )
-
-type RequestBody struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
-}
-
-func get_value(db *sql.DB, input_region string) (string, string, error) {
-
-	query := "SELECT gdp_per_capita, gdp_million FROM regions WHERE region = ? LIMIT 1"
-	var gdp_per_capita, gdp_million float64
-	err := db.QueryRow(query, input_region).Scan(&gdp_per_capita, &gdp_million)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return fmt.Sprintf("%.2f", gdp_per_capita), fmt.Sprintf("%.2f", gdp_million), nil
-
-}
 
 func main() {
 
-	db, err := sql.Open("sqlite", "data/processed/eco.db")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	// Test the connection
-	err = db.Ping()
+	store, err := initialize_store()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	region_0 := "Niedersachsen"
-	region_1 := "Berlin"
+	ctx := context.TODO()
 
-	gdp_per_capita_0, gdp_million_0, err := get_value(db, region_0)
-	if err != nil {
-		log.Fatal(err)
+	type exampleCase struct {
+		name         string
+		query        string
+		numDocuments int
+		options      []vectorstores.Option
 	}
 
-	gdp_per_capita_1, gdp_million_1, err := get_value(db, region_1)
-	if err != nil {
-		log.Fatal(err)
+	type filter = map[string]any
+	exampleCases := []exampleCase{
+		{
+			name:         "Up to 5 Cities in Japan",
+			query:        "Which of these are cities are located in Japan?",
+			numDocuments: 5,
+			options: []vectorstores.Option{
+				vectorstores.WithScoreThreshold(0.8),
+			},
+		},
+		{
+			name:         "Large Cities in South America",
+			query:        "Which of these are cities are located in South America?",
+			numDocuments: 100,
+			options: []vectorstores.Option{
+				vectorstores.WithFilters(filter{
+					"$and": []filter{
+						{"area": filter{"$gte": 1000}},
+						{"population": filter{"$gte": 13}},
+					},
+				}),
+			},
+		},
 	}
 
-	prompt := fmt.Sprintf("The region %s has a GDP per capita of %s, and a GDP of %s while the region %s has a GDP per capita of %s and a GDP of %s. Compare these regions.",
-		region_0, gdp_per_capita_0, gdp_million_0, region_1, gdp_per_capita_1, gdp_million_1)
-
-	requestBody := RequestBody{
-		Model:  "llama3.1",
-		Prompt: prompt,
-		Stream: false,
+	// run the example cases
+	results := make([][]schema.Document, len(exampleCases))
+	for ecI, ec := range exampleCases {
+		docs, errSs := store.SimilaritySearch(ctx, ec.query, ec.numDocuments, ec.options...)
+		if errSs != nil {
+			log.Fatalf("query1: %v\n", errSs)
+		}
+		results[ecI] = docs
 	}
 
-	postBody, _ := json.Marshal(requestBody)
-	responseBody := bytes.NewBuffer(postBody)
-
-	resp, err := http.Post("http://localhost:11434/api/generate", "application/json", responseBody)
-	if err != nil {
-		log.Fatalf("An Error Occured %v", err)
+	// print out the results of the run
+	fmt.Printf("Results:\n")
+	for ecI, ec := range exampleCases {
+		texts := make([]string, len(results[ecI]))
+		for docI, doc := range results[ecI] {
+			texts[docI] = doc.PageContent
+		}
+		fmt.Printf("%d. case: %s\n", ecI+1, ec.name)
+		fmt.Printf("    result: %s\n", strings.Join(texts, ", "))
 	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	var responseData map[string]interface{}
-	err = json.Unmarshal(body, &responseData)
-	if err != nil {
-		log.Fatalf("Error unmarshaling JSON: %v", err)
-	}
-	fmt.Printf("Prompt: %s\n\n", prompt)
-	fmt.Printf("Response:\n\n%s", responseData["response"])
 
 }
