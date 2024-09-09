@@ -28,7 +28,7 @@ for reg in df.region:
     elif lu == "La Rioja":
         lu = "Rioja (Spain)"
     row = {"region": reg}
-    row["wiki_page"] = wk.page(lu).content
+    row["wiki_page"] = wk.summary(lu)
     rows.append(row)
 
 # %%
