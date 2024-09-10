@@ -12,7 +12,7 @@ import (
 
 func main() {
 
-	store, err := initialize_store()
+	store, err := initStore()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -26,27 +26,30 @@ func main() {
 		options      []vectorstores.Option
 	}
 
-	type filter = map[string]any
+	//type filter = map[string]any
 	exampleCases := []exampleCase{
 		{
-			name:         "Up to 5 Cities in Japan",
-			query:        "Which of these are cities are located in Japan?",
-			numDocuments: 5,
+			name:         "Catalonia",
+			query:        "Catalone",
+			numDocuments: 1,
 			options: []vectorstores.Option{
-				vectorstores.WithScoreThreshold(0.8),
+				vectorstores.WithScoreThreshold(0.1),
 			},
 		},
 		{
-			name:         "Large Cities in South America",
-			query:        "Which of these are cities are located in South America?",
-			numDocuments: 100,
+			name:         "3 German regions",
+			query:        "Region Germany",
+			numDocuments: 3,
 			options: []vectorstores.Option{
-				vectorstores.WithFilters(filter{
-					"$and": []filter{
-						{"area": filter{"$gte": 1000}},
-						{"population": filter{"$gte": 13}},
-					},
-				}),
+				vectorstores.WithScoreThreshold(0.1),
+			},
+		},
+		{
+			name:         "Cataluña",
+			query:        "Cataluña",
+			numDocuments: 1,
+			options: []vectorstores.Option{
+				vectorstores.WithScoreThreshold(0.5),
 			},
 		},
 	}
