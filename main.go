@@ -1,92 +1,103 @@
 package main
 
 import (
-	"bytes"
-	"database/sql"
-	"encoding/json"
+	"context"
+	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 
-	_ "modernc.org/sqlite"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/ollama"
+	"github.com/tmc/langchaingo/schema"
+	"github.com/tmc/langchaingo/vectorstores"
 )
 
-type RequestBody struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Stream bool   `json:"stream"`
-}
-
-func get_value(db *sql.DB, input_region string) (string, string, error) {
-
-	query := "SELECT gdp_per_capita, gdp_million FROM regions WHERE region = ? LIMIT 1"
-	var gdp_per_capita, gdp_million float64
-	err := db.QueryRow(query, input_region).Scan(&gdp_per_capita, &gdp_million)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return fmt.Sprintf("%.2f", gdp_per_capita), fmt.Sprintf("%.2f", gdp_million), nil
-
-}
+var rebuildStore = flag.Bool("buildstore", false, "Initialize the store")
+var region_0 = flag.String("region_0", "Catalunia", "First region")
+var region_1 = flag.String("region_1", "Bayern", "Second region")
 
 func main() {
+	flag.Parse()
+	fmt.Printf("Comparing regions %s and %s\n", *region_0, *region_1)
 
-	db, err := sql.Open("sqlite", "data/processed/eco.db")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
-
-	// Test the connection
-	err = db.Ping()
+	store, err := initStore(*rebuildStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	region_0 := "Niedersachsen"
-	region_1 := "Berlin"
+	ctx := context.TODO()
 
-	gdp_per_capita_0, gdp_million_0, err := get_value(db, region_0)
+	type exampleCase struct {
+		name         string
+		query        string
+		numDocuments int
+		options      []vectorstores.Option
+	}
+
+	//type filter = map[string]any
+	cases := []exampleCase{
+		{
+			name:         *region_0,
+			query:        *region_0,
+			numDocuments: 1,
+			options: []vectorstores.Option{
+				vectorstores.WithScoreThreshold(0.5),
+			},
+		},
+		{
+			name:         *region_1,
+			query:        *region_1,
+			numDocuments: 1,
+			options: []vectorstores.Option{
+				vectorstores.WithScoreThreshold(0.5),
+			},
+		},
+	}
+
+	// run the example cases
+	results := make([][]schema.Document, len(cases))
+	for eCs, cs := range cases {
+		docs, errSs := store.SimilaritySearch(ctx, cs.query, cs.numDocuments, cs.options...)
+		if errSs != nil {
+			log.Fatalf("query1: %v\n", errSs)
+		}
+		if len(docs) == 0 {
+			panic(fmt.Sprintf("Could not find any data for %s", cs.name))
+		}
+		results[eCs] = docs
+	}
+	md_0 := results[0][0].Metadata
+
+	context_0 := fmt.Sprintf(
+		"%s\n:Country: %s, population: %s, gdp_per_capita:%s",
+		*region_0, md_0["country"], md_0["population_million"], md_0["gdp_per_capita"])
+
+	md_1 := results[1][0].Metadata
+	context_1 := fmt.Sprintf(
+		"%s\n:Country: %s, population: %s, gdp_per_capita:%s",
+		*region_1, md_1["country"], md_1["population_million"], md_1["gdp_per_capita"])
+
+	context_text := fmt.Sprintf("Context:\n%s\n%s", context_0, context_1)
+
+	// Feed back into ollama
+	ollamaLLM, err := ollama.New(ollama.WithModel("llama3.1"))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	gdp_per_capita_1, gdp_million_1, err := get_value(db, region_1)
+	ctx_background := context.Background()
+	content := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, context_text),
+		llms.TextParts(llms.ChatMessageTypeSystem, "Only use the information from the context provided"),
+		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Compare %s with %s", *region_0, *region_1)),
+	}
+	completion, err := ollamaLLM.GenerateContent(ctx_background, content, llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+		fmt.Print(string(chunk))
+		return nil
+	}))
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	prompt := fmt.Sprintf("The region %s has a GDP per capita of %s, and a GDP of %s while the region %s has a GDP per capita of %s and a GDP of %s. Compare these regions.",
-		region_0, gdp_per_capita_0, gdp_million_0, region_1, gdp_per_capita_1, gdp_million_1)
-
-	requestBody := RequestBody{
-		Model:  "llama3.1",
-		Prompt: prompt,
-		Stream: false,
-	}
-
-	postBody, _ := json.Marshal(requestBody)
-	responseBody := bytes.NewBuffer(postBody)
-
-	resp, err := http.Post("http://localhost:11434/api/generate", "application/json", responseBody)
-	if err != nil {
-		log.Fatalf("An Error Occured %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	var responseData map[string]interface{}
-	err = json.Unmarshal(body, &responseData)
-	if err != nil {
-		log.Fatalf("Error unmarshaling JSON: %v", err)
-	}
-	fmt.Printf("Prompt: %s\n\n", prompt)
-	fmt.Printf("Response:\n\n%s", responseData["response"])
+	_ = completion
 
 }
