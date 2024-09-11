@@ -17,6 +17,11 @@ data: data/interim/eco_nuts3.csv data/processed/eco_nuts3.csv data/processed/eco
 run: 
 	go run .
 
+run-rebuild: 
+	go run . -buildstore=true
+
+
+
 start-chroma:
 	docker run -d --rm --name chromadb -p 8000:8000 -v ./chroma:/chroma/chroma -e IS_PERSISTENT=TRUE -e ANONYMIZED_TELEMETRY=TRUE chromadb/chroma:latest
 .PHONY: start-chrome run

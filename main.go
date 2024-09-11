@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"strings"
@@ -10,9 +11,12 @@ import (
 	"github.com/tmc/langchaingo/vectorstores"
 )
 
-func main() {
+var rebuildStore = flag.Bool("buildstore", false, "Initialize the store")
 
-	store, err := initStore()
+func main() {
+	flag.Parse()
+
+	store, err := initStore(*rebuildStore)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,23 +34,23 @@ func main() {
 	exampleCases := []exampleCase{
 		{
 			name:         "Catalonia",
-			query:        "Catalone",
+			query:        "Catalunnia",
 			numDocuments: 1,
 			options: []vectorstores.Option{
-				vectorstores.WithScoreThreshold(0.1),
+				vectorstores.WithScoreThreshold(0.5),
 			},
 		},
 		{
-			name:         "3 German regions",
-			query:        "Region Germany",
-			numDocuments: 3,
+			name:         "Hamburg with typo",
+			query:        "Hanburg",
+			numDocuments: 1,
 			options: []vectorstores.Option{
-				vectorstores.WithScoreThreshold(0.1),
+				vectorstores.WithScoreThreshold(0.5),
 			},
 		},
 		{
-			name:         "Cataluña",
-			query:        "Cataluña",
+			name:         "Galicia",
+			query:        "Galiciaa",
 			numDocuments: 1,
 			options: []vectorstores.Option{
 				vectorstores.WithScoreThreshold(0.5),

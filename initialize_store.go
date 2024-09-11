@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sync"
 
-	"github.com/google/uuid"
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/ollama"
 	"github.com/tmc/langchaingo/schema"
@@ -16,20 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var (
-	store     *chroma.Store
-	storeErr  error
-	storeOnce sync.Once
-)
-
-func initStore() (*chroma.Store, error) {
-	storeOnce.Do(func() {
-		store, storeErr = initStore0()
-	})
-	return store, storeErr
-}
-
-func initStore0() (*chroma.Store, error) {
+func initStore(rebuildStore bool) (*chroma.Store, error) {
 
 	ollamaLLM, err := ollama.New(ollama.WithModel("llama3.1"))
 	if err != nil {
@@ -46,11 +31,15 @@ func initStore0() (*chroma.Store, error) {
 		chroma.WithChromaURL(os.Getenv("CHROMA_URL")),
 		chroma.WithEmbedder(ollamaEmbeder),
 		chroma.WithDistanceFunction("cosine"),
-		chroma.WithNameSpace(uuid.New().String()),
+		chroma.WithNameSpace("AAA"),
 	)
 	if errNs != nil {
 		log.Fatalf("new: %v\n", errNs)
 	}
+	if !rebuildStore {
+		return &store, errNs
+	}
+
 	type meta = map[string]any
 
 	// Read sqlite db
@@ -81,18 +70,15 @@ func initStore0() (*chroma.Store, error) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		doc_meta := make(meta)
-		//doc_meta["region"] = region
-		doc_meta["gdp_per_capita"] = gdp_per_capita
-		doc_meta["gdp_million"] = gdp_million
-		doc_meta["population_million"] = population_million
-		doc_meta["region"] = region
-		doc_meta["country"] = country
-		fmt.Println(region)
-		fmt.Println(doc_meta)
+		document := make(meta)
+		document["gdp_per_capita"] = gdp_per_capita
+		document["gdp_million"] = gdp_million
+		document["population_million"] = population_million
+		document["country"] = country
+		//document["wiki_page"] = wiki_page
 		schema_doc := schema.Document{
-			PageContent: wiki_page,
-			Metadata:    doc_meta,
+			PageContent: region,
+			Metadata:    document,
 		}
 		documents = append(documents, schema_doc)
 
@@ -100,7 +86,7 @@ func initStore0() (*chroma.Store, error) {
 	fmt.Println("\nAdding documents to store...")
 
 	// Process documents in chunk
-	const chunkSize = 3
+	const chunkSize = 4
 	ctx := context.Background()
 
 	for i := 0; i < len(documents); i += chunkSize {
