@@ -5,8 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"strings"
 
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/ollama"
 	"github.com/tmc/langchaingo/schema"
 	"github.com/tmc/langchaingo/vectorstores"
 )
@@ -30,27 +31,22 @@ func main() {
 		options      []vectorstores.Option
 	}
 
+	region_0 := "Sachsen"
+	region_1 := "Pais Vasque"
+
 	//type filter = map[string]any
-	exampleCases := []exampleCase{
+	cases := []exampleCase{
 		{
-			name:         "Catalonia",
-			query:        "Catalunnia",
+			name:         region_0,
+			query:        region_0,
 			numDocuments: 1,
 			options: []vectorstores.Option{
 				vectorstores.WithScoreThreshold(0.5),
 			},
 		},
 		{
-			name:         "Hamburg with typo",
-			query:        "Hanburg",
-			numDocuments: 1,
-			options: []vectorstores.Option{
-				vectorstores.WithScoreThreshold(0.5),
-			},
-		},
-		{
-			name:         "Galicia",
-			query:        "Galiciaa",
+			name:         region_1,
+			query:        region_1,
 			numDocuments: 1,
 			options: []vectorstores.Option{
 				vectorstores.WithScoreThreshold(0.5),
@@ -59,24 +55,47 @@ func main() {
 	}
 
 	// run the example cases
-	results := make([][]schema.Document, len(exampleCases))
-	for ecI, ec := range exampleCases {
-		docs, errSs := store.SimilaritySearch(ctx, ec.query, ec.numDocuments, ec.options...)
+	results := make([][]schema.Document, len(cases))
+	for eCs, cs := range cases {
+		docs, errSs := store.SimilaritySearch(ctx, cs.query, cs.numDocuments, cs.options...)
 		if errSs != nil {
 			log.Fatalf("query1: %v\n", errSs)
 		}
-		results[ecI] = docs
+		results[eCs] = docs
 	}
 
-	// print out the results of the run
-	fmt.Printf("Results:\n")
-	for ecI, ec := range exampleCases {
-		texts := make([]string, len(results[ecI]))
-		for docI, doc := range results[ecI] {
-			texts[docI] = doc.PageContent
-		}
-		fmt.Printf("%d. case: %s\n", ecI+1, ec.name)
-		fmt.Printf("    result: %s\n", strings.Join(texts, ", "))
+	md_0 := results[0][0].Metadata
+
+	context_0 := fmt.Sprintf(
+		"%s\n:Country: %s, population: %s, gdp_per_capita:%s",
+		region_0, md_0["country"], md_0["population_million"], md_0["gdp_per_capita"])
+
+	md_1 := results[1][0].Metadata
+	context_1 := fmt.Sprintf(
+		"%s\n:Country: %s, population: %s, gdp_per_capita:%s",
+		region_1, md_1["country"], md_1["population_million"], md_1["gdp_per_capita"])
+
+	context_text := fmt.Sprintf("Context:\n%s\n%s", context_0, context_1)
+
+	// Feed back into ollama
+	ollamaLLM, err := ollama.New(ollama.WithModel("llama3.1"))
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	ctx_background := context.Background()
+	content := []llms.MessageContent{
+		llms.TextParts(llms.ChatMessageTypeSystem, context_text),
+		llms.TextParts(llms.ChatMessageTypeSystem, "Only use the information from the context provided"),
+		llms.TextParts(llms.ChatMessageTypeHuman, fmt.Sprintf("Compare %s with %s", region_0, region_1)),
+	}
+	completion, err := ollamaLLM.GenerateContent(ctx_background, content, llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+		fmt.Print(string(chunk))
+		return nil
+	}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = completion
 
 }
