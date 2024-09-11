@@ -1,5 +1,3 @@
-
-
 data/interim/eco_nuts3.csv: scripts/eurostat_data/download_data.py
 	cd scripts/eurostat_data && uv run download_data.py
 
@@ -19,8 +17,6 @@ run:
 
 run-rebuild: 
 	go run . -buildstore=true
-
-
 
 start-chroma:
 	docker run -d --rm --name chromadb -p 8000:8000 -v ./chroma:/chroma/chroma -e IS_PERSISTENT=TRUE -e ANONYMIZED_TELEMETRY=TRUE chromadb/chroma:latest
