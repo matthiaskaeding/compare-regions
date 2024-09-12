@@ -2,10 +2,8 @@
 
 import wikipedia as wk
 
-import sqlite3
 from pathlib import Path
 import pandas as pd
-import os
 
 # %%
 assert Path().cwd().name == "eurostat_data"
