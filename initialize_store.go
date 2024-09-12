@@ -49,7 +49,7 @@ func initStore(rebuildStore bool) (*chroma.Store, error) {
 	}
 	defer db.Close()
 	query := `
-		SELECT wiki_page, region, gdp_per_capita, gdp_million, country, population_million
+		SELECT wiki_summary, region, gdp_per_capita, gdp_million, country, population_million
 		FROM regions 
 		WHERE country IN ('Spain', 'Germany')
 		ORDER BY region
@@ -65,8 +65,8 @@ func initStore(rebuildStore bool) (*chroma.Store, error) {
 	for rows.Next() {
 
 		var gdp_per_capita, gdp_million, population_million float64
-		var region, country, wiki_page string
-		err := rows.Scan(&wiki_page, &region, &gdp_per_capita, &gdp_million, &country, &population_million)
+		var wiki_summary, region, country string
+		err := rows.Scan(&wiki_summary, &region, &gdp_per_capita, &gdp_million, &country, &population_million)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -75,7 +75,9 @@ func initStore(rebuildStore bool) (*chroma.Store, error) {
 		document["gdp_million"] = gdp_million
 		document["population_million"] = population_million
 		document["country"] = country
-		//document["wiki_page"] = wiki_page
+		document["wiki_summary"] = wiki_summary
+		fmt.Println(document)
+
 		schema_doc := schema.Document{
 			PageContent: region,
 			Metadata:    document,
